@@ -28,9 +28,8 @@ class MainIcon(QtWidgets.QLabel):
             event.setDropAction(QtCore.Qt.CopyAction)
             event.accept()
 
-            new_text = ''
             for url in event.mimeData().urls():
-                new_text += '\n' + str(url.toLocalFile())
+                new_text = str(url.toLocalFile())
                 self.read_raw(new_text)
         else:
             event.ignore()
@@ -58,37 +57,47 @@ class MainIcon(QtWidgets.QLabel):
                 pass
         file_handle.close()
 
-    def read_raw(self, raw_file):
+    def read_raw(self, dropped_file):
         # Require data.
         self.ch_work_dir()
-        if not raw_file.endswith('.raw'):
-            print("{0} is not Raw file.".format(raw_file))
+        file_handle = h5py.File('xrd_lib.h5', 'a')
+
+        logging.debug("Reading file {0}...".format(dropped_file))
+        instance = Reader.reader(dropped_file)
+        if instance is None:
+            logging.info('Can not recognize file type.')
             return
-        instance = Reader.RawFile(raw_file).read_data()
+        instance = instance.read_data()
+
         sub_file_name = (
-            instance.scan_dict['sample'] +
-            '/' + os.path.basename(raw_file).split('.')[0])
-        with open('xrd_lib.h5', 'a'):
-            file_handle = h5py.File('xrd_lib.h5')
-        file_handle = file_handle.require_group(sub_file_name)
+            instance.get_scan_attribute('sample') +
+            '/' + os.path.basename(dropped_file).split('.')[0])
+
+        logging.debug("Saving file to {0}...".format(sub_file_name))
+
+        group_handle = file_handle.require_group(sub_file_name)
 
         # Record data.
-        data_dict = instance.data_dict.copy()
+        data_dict = instance.get_data_dict()
         for key in data_dict.keys():
             try:
-                del file_handle[key]
+                del group_handle[key]
             except (TypeError, KeyError):
                 pass
-            file_handle.create_dataset(
-                key,
-                data=data_dict[key]
-            )
+            try:
+                group_handle.create_dataset(
+                    key,
+                    data=data_dict[key]
+                )
+            except TypeError as e:
+                logging.error(e)
+                pass
 
         # Record Setup
-        scan_dict = instance.scan_dict.copy()
+        scan_dict = instance.get_scan_dict()
         for key in scan_dict.keys():
             try:
-                file_handle.attrs.modify(key, scan_dict[key])
+                group_handle.attrs.modify(key, scan_dict[key])
             except TypeError:
                 pass
         file_handle.close()
@@ -146,4 +155,12 @@ def main():
     sys.exit(exit_code_sys)
 
 
-if __name__ == '__main__': main()
+if __name__ == '__main__':
+    import logging
+    logging.basicConfig(
+        # filename=os.path.join(
+        #     os.path.dirname(sys.argv[0]), 'log', __name__ + '.log'),
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    )
+    main()
