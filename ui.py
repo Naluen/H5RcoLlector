@@ -29,8 +29,15 @@ class MainIcon(QtWidgets.QLabel):
             event.accept()
 
             for url in event.mimeData().urls():
-                new_text = str(url.toLocalFile())
-                self.read_raw(new_text)
+                dropped_str = str(url.toLocalFile())
+                if os.path.isdir(dropped_str):
+                    for path, sub_dirs, files in os.walk(dropped_str):
+                        for filename in files:
+                            self.read_raw(os.path.join(path, filename))
+                elif os.path.isfile(dropped_str):
+                    self.read_raw(dropped_str)
+                else:
+                    raise TypeError("Please choose a directory or a file.")
         else:
             event.ignore()
 
@@ -67,10 +74,11 @@ class MainIcon(QtWidgets.QLabel):
         if instance is None:
             logging.info('Can not recognize file type.')
             return
-        instance = instance.read_data()
+        scan_instance = instance.read_data()
+        scan_dict = scan_instance.get_scan_dict()
 
         sub_file_name = (
-            instance.get_scan_attribute('sample') +
+            scan_dict['sample'] +
             '/' + os.path.basename(dropped_file).split('.')[0])
 
         logging.debug("Saving file to {0}...".format(sub_file_name))
@@ -78,7 +86,7 @@ class MainIcon(QtWidgets.QLabel):
         group_handle = file_handle.require_group(sub_file_name)
 
         # Record data.
-        data_dict = instance.get_data_dict()
+        data_dict = scan_instance.get_data_dict()
         for key in data_dict.keys():
             try:
                 del group_handle[key]
@@ -94,7 +102,7 @@ class MainIcon(QtWidgets.QLabel):
                 pass
 
         # Record Setup
-        scan_dict = instance.get_scan_dict()
+        scan_dict = scan_instance.get_scan_dict()
         for key in scan_dict.keys():
             try:
                 group_handle.attrs.modify(key, scan_dict[key])
@@ -163,4 +171,7 @@ if __name__ == '__main__':
         level=logging.DEBUG,
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
     )
-    main()
+    try:
+        main()
+    except BaseException as e:
+        logging.error(e)
